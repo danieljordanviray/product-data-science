@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Active, New, and Returning Users (Over Time)</title>
+<meta name="description" content="One flag, calculated before any dashboard filter touches the data, splits active users into new + returning — in SQL and Power BI, with the daily and cumulative charts read correctly.">
+<meta name="author" content="Daniel Jordan Viray">
+<meta property="article:author" content="Daniel Jordan Viray">
+<meta property="article:published_time" content="2026-11-03T12:00:00-05:00">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Active, New, and Returning Users (Over Time)">
+<meta property="og:description" content="Active = New + Returning. One precomputed flag makes the split survive any date filter a dashboard user can set.">
+<meta property="og:image" content="https://danieljordanviray.github.io/product-data-science/active-new-and-returning-users/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Active, New, and Returning Users (Over Time)">
+<meta name="twitter:description" content="Active = New + Returning. One precomputed flag makes the split survive any date filter a dashboard user can set.">
+<meta name="twitter:image" content="https://danieljordanviray.github.io/product-data-science/active-new-and-returning-users/og-image.jpg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting",
+"headline":"Active, New, and Returning Users (Over Time)",
+"description":"One flag, calculated before any dashboard filter touches the data, splits active users into new + returning — in SQL and Power BI.",
+"image":"https://danieljordanviray.github.io/product-data-science/active-new-and-returning-users/og-image.jpg",
+"datePublished":"2026-11-03T12:00:00-05:00",
+"author":{"@type":"Person","name":"Daniel Jordan Viray","url":"https://danieljordanviray.com",
+"sameAs":["https://www.linkedin.com/in/danieljordanviray","https://github.com/danieljordanviray"]}}
+</script>
+<style>
+body { font-family: -apple-system, Georgia, serif; max-width: 720px; margin: 0 auto;
+       padding: 24px 18px; line-height: 1.7; color: #1a1a1a; background: #fff; }
+h1 { font-size: 1.6em; } h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+h3 { margin-top: 1.6em; }
+.topnav { font-size: .85rem; margin: 0 0 1.2em; }
+.topnav a { color: #1f6feb; text-decoration: none; }
+.watchout { background: #fffbeb; border-left: 4px solid #d97706; padding: 12px 16px; margin: 1.5em 0; }
+.watchout strong { color: #92400e; }
+.proveit { background: #eef7ee; border-left: 4px solid #2a7d2a; padding: 12px 16px; margin: 1.5em 0; }
+.answer { background: #eef4fb; border-left: 4px solid #2b50aa; padding: 12px 16px; margin: 1.5em 0; }
+tr.dropped { background: #fde8e8; color: #7a2e2e; }
+table { border-collapse: collapse; font-size: 0.88em; margin: 1em 0; }
+th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: left; }
+th { background: #f0f0f0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.small { color: #555; font-size: 0.9em; }
+.author { color: #888; font-size: 0.85em; }
+code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 0.88em; }
+pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.82em; }
+</style></head><body>
+<div class="topnav"><a href="../index.html">← Homepage</a></div>
+<h1>Active, New, and Returning Users (Over Time)</h1>
+<p class="small">November 3, 2026</p>
+<p class="author">Author: Daniel Jordan Viray</p>
+<p class="small">Product analytics · SQL + Power BI / DAX · one flag that splits every period’s users into new and returning</p>
+
+<p><strong>Who this is for:</strong> product data scientists building dashboards
+that executives and product managers will filter themselves. The calculation has
+to stay correct no matter what date range the viewer picks — that constraint,
+not the arithmetic, is the whole problem.</p>
+
+<p><strong>The setup.</strong> A platform launched on <strong>January 11, 2026</strong>,
+and members have been using it since. Today is <strong>November 3, 2026</strong>.
+Every session is one row: a member, a session, and when it happened. For any
+time period we want three numbers, related by one identity:</p>
+
+<div class="answer"><strong>Active Users = New Users + Returning Users</strong><br>
+<em>Active</em> — distinct members with at least one session in the period.
+<em>New</em> — active members whose first-ever session is in the period.
+<em>Returning</em> — active members whose first-ever session was before the period started.</div>
+
+<h2>The raw dataset</h2>
+<p class="small">Sessions — columns ordered Member ID, Session ID, Session Timestamp; rows ordered by Member ID, then Session Timestamp, then Session ID. 12 sessions, 6 members.</p>
+<table>
+<tr><th>Member ID</th><th>Session ID</th><th>Session Timestamp</th></tr>
+<tr><td>A</td><td>S01</td><td>2026-01-11 09:00</td></tr>
+<tr><td>A</td><td>S04</td><td>2026-02-10 10:30</td></tr>
+<tr><td>A</td><td>S08</td><td>2026-07-14 09:15</td></tr>
+<tr><td>B</td><td>S02</td><td>2026-01-11 10:15</td></tr>
+<tr><td>B</td><td>S11</td><td>2026-10-05 11:40</td></tr>
+<tr><td>C</td><td>S03</td><td>2026-01-20 14:00</td></tr>
+<tr><td>C</td><td>S05</td><td>2026-03-08 09:20</td></tr>
+<tr><td>D</td><td>S06</td><td>2026-04-15 13:30</td></tr>
+<tr><td>D</td><td>S09</td><td>2026-08-22 10:05</td></tr>
+<tr><td>E</td><td>S07</td><td>2026-06-15 08:50</td></tr>
+<tr><td>E</td><td>S10</td><td>2026-09-18 15:10</td></tr>
+<tr><td>F</td><td>S12</td><td>2026-11-03 09:00</td></tr>
+</table>
+
+<h2>Step 1 — add one column: is_first_session</h2>
+<p>Flag each session row: <strong>1</strong> if it is that member’s first-ever
+session on the platform, <strong>0</strong> otherwise. Exactly one row per member
+gets a 1. The decisive detail is <em>when</em> this is calculated: in the dataset,
+at refresh time, over the member’s <em>entire history</em> — before any dashboard
+filter exists. A filter applied later can hide rows, but it can never move a flag.</p>
+
+<h3>SQL</h3>
+<pre>SELECT
+    member_id,
+    session_id,
+    session_timestamp,
+    CASE
+        WHEN ROW_NUMBER() OVER (
+                 PARTITION BY member_id
+                 ORDER BY session_timestamp, session_id
+             ) = 1
+        THEN 1 ELSE 0
+    END AS is_first_session
+FROM sessions;</pre>
+<p><code>ROW_NUMBER()</code> restarts the count at 1 for each member, ordered by
+time — so the 1 lands on the earliest session, with Session ID breaking any
+exact-timestamp tie. (To filter or aggregate on the flag, wrap this in a CTE or
+subquery, since window functions are computed after <code>WHERE</code>.)</p>
+
+<h3>Power BI (DAX calculated column)</h3>
+<pre>is_first_session =
+VAR FirstSessionAt =
+    CALCULATE (
+        MIN ( Sessions[Session Timestamp] ),
+        ALLEXCEPT ( Sessions, Sessions[Member ID] )
+    )
+RETURN
+    IF ( Sessions[Session Timestamp] = FirstSessionAt, 1, 0 )</pre>
+<p><code>ALLEXCEPT</code> reads as “this member’s earliest session, ignoring
+everything else.” Because this is a <em>calculated column</em>, Power BI evaluates
+it once at refresh, over full history — slicers never touch it. (If a member could
+have two sessions at the exact same timestamp, both would flag 1; the distinct-member
+counts below are still right, but prefer the SQL <code>ROW_NUMBER()</code> version
+if you also need to count first <em>sessions</em>.)</p>
+
+<h3>The dataset with the flag</h3>
+<table>
+<tr><th>Member ID</th><th>Session ID</th><th>Session Timestamp</th><th class="num">is_first_session</th></tr>
+<tr><td>A</td><td>S01</td><td>2026-01-11 09:00</td><td class="num"><strong>1</strong></td></tr>
+<tr><td>A</td><td>S04</td><td>2026-02-10 10:30</td><td class="num">0</td></tr>
+<tr><td>A</td><td>S08</td><td>2026-07-14 09:15</td><td class="num">0</td></tr>
+<tr><td>B</td><td>S02</td><td>2026-01-11 10:15</td><td class="num"><strong>1</strong></td></tr>
+<tr><td>B</td><td>S11</td><td>2026-10-05 11:40</td><td class="num">0</td></tr>
+<tr><td>C</td><td>S03</td><td>2026-01-20 14:00</td><td class="num"><strong>1</strong></td></tr>
+<tr><td>C</td><td>S05</td><td>2026-03-08 09:20</td><td class="num">0</td></tr>
+<tr><td>D</td><td>S06</td><td>2026-04-15 13:30</td><td class="num"><strong>1</strong></td></tr>
+<tr><td>D</td><td>S09</td><td>2026-08-22 10:05</td><td class="num">0</td></tr>
+<tr><td>E</td><td>S07</td><td>2026-06-15 08:50</td><td class="num"><strong>1</strong></td></tr>
+<tr><td>E</td><td>S10</td><td>2026-09-18 15:10</td><td class="num">0</td></tr>
+<tr><td>F</td><td>S12</td><td>2026-11-03 09:00</td><td class="num"><strong>1</strong></td></tr>
+</table>
+<p class="small">Sanity check that always has to hold: the flags sum to the number of distinct members (6 ones, 6 members).</p>
+
+<h2>Step 2 — the three measures</h2>
+<pre>-- Power BI (DAX measures)
+Active Users =
+DISTINCTCOUNT ( Sessions[Member ID] )
+
+New Users =
+CALCULATE (
+    DISTINCTCOUNT ( Sessions[Member ID] ),
+    Sessions[is_first_session] = 1
+)
+
+Returning Users =
+[Active Users] - [New Users]</pre>
+<pre>-- SQL (same three numbers, for any window [@start, @end])
+WITH flagged AS ( /* the Step 1 query */ )
+SELECT
+    COUNT(DISTINCT member_id) AS active_users,
+    COUNT(DISTINCT CASE WHEN is_first_session = 1
+                        THEN member_id END) AS new_users,
+    COUNT(DISTINCT member_id)
+      - COUNT(DISTINCT CASE WHEN is_first_session = 1
+                            THEN member_id END) AS returning_users
+FROM flagged
+WHERE session_timestamp &gt;= @start AND session_timestamp &lt; @end;</pre>
+<p>Read <code>New Users</code> literally: distinct members who have, inside the
+period the viewer selected, a session carrying the flag. The date filter and the
+flag <em>intersect</em> — a flagged session only counts if it also falls in the
+selected window.</p>
+
+<h2>Check 1 — the entire period since launch: Jan 11 → Nov 3, 2026</h2>
+<table>
+<tr><th>Measure</th><th>Members</th><th class="num">Count</th></tr>
+<tr><td>Active users</td><td>A, B, C, D, E, F</td><td class="num">6</td></tr>
+<tr><td>New users</td><td>A, B, C, D, E, F (everyone’s first session is in this period — it starts at launch)</td><td class="num">6</td></tr>
+<tr><td>Returning users</td><td>— (nobody existed before the period started)</td><td class="num">0</td></tr>
+</table>
+<p>6 = 6 + 0. ✓</p>
+<div class="watchout"><strong>Watch out — returning <em>users</em> ≠ repeat <em>sessions</em>.</strong>
+Returning = 0 over the full period surprises people, because A clearly
+<em>came back</em> in February and July. Both things are true, about different units.
+Classified as a <em>user in this period</em>, A is new: she was acquired inside it,
+and a member gets exactly one classification per period. Counted as
+<em>sessions</em>, 6 of the 12 sessions are repeat sessions (flag 0). Keep the two
+sentences separate in reviews — “half our sessions are repeat visits” and “zero of
+this period’s users are returning users” describe the same table.</div>
+
+<h2>Check 2 — now add the dashboard filter: Jun 1, 2026 → Nov 3, 2026</h2>
+<p>Here is the exact same flagged dataset from Step 1, with the filter applied.
+The session-date filter keeps only rows from <strong>June 1, 2026</strong> onward —
+the rows it removes are shaded <span style="background:#fde8e8;padding:1px 5px;border-radius:3px">light red</span>.
+Six rows drop off, six survive.</p>
+<table>
+<tr><th>Member ID</th><th>Session ID</th><th>Session Timestamp</th><th class="num">is_first_session</th><th>Under the Jun 1 filter</th></tr>
+<tr class="dropped"><td>A</td><td>S01</td><td>2026-01-11 09:00</td><td class="num"><strong>1</strong></td><td>drops off — before Jun 1</td></tr>
+<tr class="dropped"><td>A</td><td>S04</td><td>2026-02-10 10:30</td><td class="num">0</td><td>drops off — before Jun 1</td></tr>
+<tr><td>A</td><td>S08</td><td>2026-07-14 09:15</td><td class="num">0</td><td>survives</td></tr>
+<tr class="dropped"><td>B</td><td>S02</td><td>2026-01-11 10:15</td><td class="num"><strong>1</strong></td><td>drops off — before Jun 1</td></tr>
+<tr><td>B</td><td>S11</td><td>2026-10-05 11:40</td><td class="num">0</td><td>survives</td></tr>
+<tr class="dropped"><td>C</td><td>S03</td><td>2026-01-20 14:00</td><td class="num"><strong>1</strong></td><td>drops off — before Jun 1</td></tr>
+<tr class="dropped"><td>C</td><td>S05</td><td>2026-03-08 09:20</td><td class="num">0</td><td>drops off — before Jun 1</td></tr>
+<tr class="dropped"><td>D</td><td>S06</td><td>2026-04-15 13:30</td><td class="num"><strong>1</strong></td><td>drops off — before Jun 1</td></tr>
+<tr><td>D</td><td>S09</td><td>2026-08-22 10:05</td><td class="num">0</td><td>survives</td></tr>
+<tr><td>E</td><td>S07</td><td>2026-06-15 08:50</td><td class="num"><strong>1</strong></td><td>survives</td></tr>
+<tr><td>E</td><td>S10</td><td>2026-09-18 15:10</td><td class="num">0</td><td>survives</td></tr>
+<tr><td>F</td><td>S12</td><td>2026-11-03 09:00</td><td class="num"><strong>1</strong></td><td>survives</td></tr>
+</table>
+<p>Now walk it member by member — what survives for each person decides how that
+person is counted in this window:</p>
+<ul>
+<li><strong>Member A — 1 of 3 sessions survives.</strong> S01 (her flagged first session, Jan 11) and S04 (Feb 10) drop off; S08 (Jul 14, flag 0) survives. The window can see A using the platform but cannot see her first session — so A counts as <strong>active</strong> and <strong>returning</strong>, not new.</li>
+<li><strong>Member B — 1 of 2 sessions survives.</strong> S02 (his flagged first session, Jan 11) drops off; S11 (Oct 5, flag 0) survives. Same story as A: <strong>active</strong> and <strong>returning</strong>, not new.</li>
+<li><strong>Member C — 0 of 2 sessions survive.</strong> Both S03 (Jan 20) and S05 (Mar 8) drop off. C has no session in the window at all, so C counts in <strong>nothing</strong> for this window — not active, not new, not returning. Filtering a member completely out of view removes them from every count, which is correct: this window is not about C.</li>
+<li><strong>Member D — 1 of 2 sessions survives.</strong> S06 (his flagged first session, Apr 15) drops off; S09 (Aug 22, flag 0) survives. <strong>Active</strong> and <strong>returning</strong>, not new.</li>
+<li><strong>Member E — 2 of 2 sessions survive.</strong> S07 (Jun 15) is after the filter start, and it carries the flag — her first-ever session is genuinely inside this window. E counts as <strong>active</strong> and <strong>new</strong>. (S10, Sep 18, also survives; it doesn’t change her classification.)</li>
+<li><strong>Member F — 1 of 1 session survives.</strong> S12 (Nov 3) is flagged and inside the window — F joined today. <strong>Active</strong> and <strong>new</strong>.</li>
+</ul>
+<p>Add up the walk: 5 members have at least one surviving session (active),
+2 of them have a surviving <em>flagged</em> session (new), and the other 3 active
+members’ flags sit in the red rows (returning). That is exactly the summary:</p>
+<table>
+<tr><th>Measure</th><th>Members</th><th class="num">Count</th></tr>
+<tr><td>Active users</td><td>A, B, D, E, F — everyone who used the platform in the window, new or not</td><td class="num">5</td></tr>
+<tr><td>New users</td><td>E, F — the only members whose <em>flagged</em> session falls in the window</td><td class="num">2</td></tr>
+<tr><td>Returning users</td><td>A, B, D — active in the window, flagged back in Jan/Apr</td><td class="num">3</td></tr>
+</table>
+<p>5 = 2 + 3. ✓ The calculation is robust to the filter for one reason: A’s, B’s
+and D’s flags were fixed in January and April, in the dataset. The filter can
+hide their first sessions from view — it cannot re-flag their July, October and
+August sessions as firsts.</p>
+<p>Contrast with the broken version: if “first session” were recalculated
+<em>after</em> filtering (a <code>MIN()</code> inside a measure over visible rows),
+each active member’s first <em>visible</em> session would flag — new would read
+5 and returning 0, every window, forever. A dashboard whose returning count is
+always zero is telling you the flag is being computed in the wrong place.</p>
+
+<div class="watchout"><strong>Watch out — the subtraction order is the whole formula.</strong>
+Returning = <strong>Active − New</strong>, never New − Active. The Jun 1 window
+makes the error self-revealing: 2 − 5 = −3, and a user count can’t be negative.
+If a returning number ever comes out negative, the subtraction is flipped (or the
+new count is inflated by a post-filter flag).</div>
+
+<h2>The two dashboard charts — the practical implementation</h2>
+<p>That is the whole job now. The dataset is the flagged sessions table
+(Member ID, Session ID, Session Timestamp, <code>is_first_session</code>), plus
+one helper column for the day on its own:</p>
+<pre>Session Day =
+DATE (
+    YEAR ( Sessions[Session Timestamp] ),
+    MONTH ( Sessions[Session Timestamp] ),
+    DAY ( Sessions[Session Timestamp] )
+)</pre>
+<p>Put <strong>one date slicer on Session Day</strong> on the dashboard. Both
+charts below use Session Day as their axis (set the axis type to
+<em>Continuous</em>), so both respond to that one slicer. The examples show
+the slicer set to <strong>June 1, 2026 → November 3, 2026</strong>.</p>
+
+<h3>Chart 1 — per day: active users and new users</h3>
+<p>Use the two measures from Step 2, unchanged. No new calculation is needed —
+each measure is evaluated once per day on the axis, inside whatever range the
+slicer selected:</p>
+<pre>Active Users =
+DISTINCTCOUNT ( Sessions[Member ID] )
+
+New Users =
+CALCULATE (
+    DISTINCTCOUNT ( Sessions[Member ID] ),
+    Sessions[is_first_session] = 1
+)</pre>
+<svg width="700" height="260" viewBox="0 0 700 260" role="img" aria-label="Chart 1: active users and new users per day, selected period June 1 to November 3 2026" style="max-width:100%;background:#fafafa;border:1px solid #ddd;border-radius:6px">
+  <line x1="70" y1="180" x2="675" y2="180" stroke="#999"/>
+  <line x1="70" y1="180" x2="70" y2="30" stroke="#999"/>
+  <text x="47" y="184" font-size="11" fill="#555">0</text>
+  <text x="47" y="124" font-size="11" fill="#555">1</text>
+  <text x="47" y="64" font-size="11" fill="#555">2</text>
+  <text x="16" y="105" font-size="12" fill="#333" transform="rotate(-90 16 105)" text-anchor="middle">Users that day</text>
+  <line x1="70" y1="180" x2="70" y2="185" stroke="#999"/>
+  <text x="70" y="198" font-size="10" fill="#555" text-anchor="middle">Jun 1</text>
+  <line x1="184" y1="180" x2="184" y2="185" stroke="#999"/>
+  <text x="184" y="198" font-size="10" fill="#555" text-anchor="middle">Jul</text>
+  <line x1="302" y1="180" x2="302" y2="185" stroke="#999"/>
+  <text x="302" y="198" font-size="10" fill="#555" text-anchor="middle">Aug</text>
+  <line x1="420" y1="180" x2="420" y2="185" stroke="#999"/>
+  <text x="420" y="198" font-size="10" fill="#555" text-anchor="middle">Sep</text>
+  <line x1="534" y1="180" x2="534" y2="185" stroke="#999"/>
+  <text x="534" y="198" font-size="10" fill="#555" text-anchor="middle">Oct</text>
+  <line x1="660" y1="180" x2="660" y2="185" stroke="#999"/>
+  <text x="660" y="198" font-size="10" fill="#555" text-anchor="middle">Nov 3</text>
+  <text x="365" y="222" font-size="12" fill="#333" text-anchor="middle">Session day (continuous) — selected period: Jun 1 to Nov 3, 2026</text>
+  <polyline points="123,120 234,120 382,120 485,120 550,120 660,120" fill="none" stroke="#444444" stroke-width="3"/>
+  <rect x="117" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="119" y="106" font-size="12" fill="#444">1</text>
+  <rect x="228" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="230" y="106" font-size="12" fill="#444">1</text>
+  <rect x="376" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="378" y="106" font-size="12" fill="#444">1</text>
+  <rect x="479" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="481" y="106" font-size="12" fill="#444">1</text>
+  <rect x="544" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="546" y="106" font-size="12" fill="#444">1</text>
+  <rect x="654" y="114" width="12" height="12" fill="white" stroke="#444" stroke-width="2"/><text x="656" y="106" font-size="12" fill="#444">1</text>
+  <polyline points="123,120 234,180 382,180 485,180 550,180 660,120" fill="none" stroke="#2b50aa" stroke-width="3"/>
+  <circle cx="123" cy="120" r="5" fill="#2b50aa"/>
+  <text x="119" y="108" font-size="12" fill="#2b50aa">1</text>
+  <circle cx="234" cy="180" r="5" fill="#2b50aa"/>
+  <text x="242" y="184" font-size="12" fill="#2b50aa">0</text>
+  <circle cx="382" cy="180" r="5" fill="#2b50aa"/>
+  <text x="390" y="184" font-size="12" fill="#2b50aa">0</text>
+  <circle cx="485" cy="180" r="5" fill="#2b50aa"/>
+  <text x="493" y="184" font-size="12" fill="#2b50aa">0</text>
+  <circle cx="550" cy="180" r="5" fill="#2b50aa"/>
+  <text x="558" y="184" font-size="12" fill="#2b50aa">0</text>
+  <circle cx="660" cy="120" r="5" fill="#2b50aa"/>
+  <text x="656" y="108" font-size="12" fill="#2b50aa">1</text>
+  <rect x="70" y="8" width="11" height="11" fill="white" stroke="#444" stroke-width="2"/><text x="86" y="18" font-size="11" fill="#333">active users per day</text>
+  <text x="248" y="18" font-size="11" fill="#2b50aa">— new users per day</text>
+</svg>
+<p><strong>How to read it, simply.</strong> For each day: the gray point is how
+many distinct members used the platform that day, and the blue point is how
+many of them were using it for the first time ever. Blue can never sit above
+gray. The gap between them on a day is that day’s returning users
+(Jul 14: gray 1, blue 0 — one person used the platform, and she was returning).
+Days with sessions are the only days with points; change the slicer and you
+simply see a different set of days — the value on any given day never changes,
+because the flag was fixed in the dataset.</p>
+<table>
+<tr><th>Day</th><th class="num">Active Users</th><th class="num">New Users</th><th class="num">Returning Users (= Active − New)</th></tr>
+<tr><td>2026-06-15</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+<tr><td>2026-07-14</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-08-22</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-09-18</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-10-05</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-11-03</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+</table>
+
+<h3>Chart 2 — cumulative new users, within the selected period</h3>
+<p>Yes — this chart needs nothing fancier than the flag itself. Because
+exactly one row per member carries a 1, <em>adding up the flag is counting
+new users</em>: <code>SUM(is_first_session)</code> on a single day is that
+day’s new users, and over a whole period it is the period’s new users. So
+Chart 2 is just a <strong>running total of <code>SUM(is_first_session)</code></strong>:
+put <code>Session Day</code> on the axis, that sum on the values, and either
+apply a “Running total” quick measure to it, or write the running total as
+one measure:</p>
+<pre>New Users (from the flag) =
+SUM ( Sessions[is_first_session] )
+
+Cumulative New Users =
+VAR CurrentDay = MAX ( Sessions[Session Day] )
+RETURN
+CALCULATE (
+    SUM ( Sessions[is_first_session] ),
+    FILTER (
+        ALLSELECTED ( Sessions[Session Day] ),
+        Sessions[Session Day] &lt;= CurrentDay
+    )
+)</pre>
+<p>Reading it: <code>ALLSELECTED</code> keeps only the days inside the range
+the viewer selected, which is what makes the line <em>restart</em> at the
+beginning of each new selection; <code>&lt;= CurrentDay</code> adds the flag
+up from the start of that range through the day being plotted. Same line,
+either way — quick measure or DAX.</p>
+<svg width="700" height="260" viewBox="0 0 700 260" role="img" aria-label="Chart 2: cumulative new users within the selected period, starting at zero on June 1 and reaching 2 on November 3" style="max-width:100%;background:#fafafa;border:1px solid #ddd;border-radius:6px">
+  <line x1="70" y1="180" x2="675" y2="180" stroke="#999"/>
+  <line x1="70" y1="180" x2="70" y2="30" stroke="#999"/>
+  <text x="47" y="184" font-size="11" fill="#555">0</text>
+  <text x="47" y="124" font-size="11" fill="#555">1</text>
+  <text x="47" y="64" font-size="11" fill="#555">2</text>
+  <text x="16" y="105" font-size="12" fill="#333" transform="rotate(-90 16 105)" text-anchor="middle">Cumulative new users</text>
+  <line x1="70" y1="180" x2="70" y2="185" stroke="#999"/>
+  <text x="70" y="198" font-size="10" fill="#555" text-anchor="middle">Jun 1</text>
+  <line x1="184" y1="180" x2="184" y2="185" stroke="#999"/>
+  <text x="184" y="198" font-size="10" fill="#555" text-anchor="middle">Jul</text>
+  <line x1="302" y1="180" x2="302" y2="185" stroke="#999"/>
+  <text x="302" y="198" font-size="10" fill="#555" text-anchor="middle">Aug</text>
+  <line x1="420" y1="180" x2="420" y2="185" stroke="#999"/>
+  <text x="420" y="198" font-size="10" fill="#555" text-anchor="middle">Sep</text>
+  <line x1="534" y1="180" x2="534" y2="185" stroke="#999"/>
+  <text x="534" y="198" font-size="10" fill="#555" text-anchor="middle">Oct</text>
+  <line x1="660" y1="180" x2="660" y2="185" stroke="#999"/>
+  <text x="660" y="198" font-size="10" fill="#555" text-anchor="middle">Nov 3</text>
+  <text x="365" y="222" font-size="12" fill="#333" text-anchor="middle">Session day (continuous) — selected period: Jun 1 to Nov 3, 2026</text>
+  <polyline points="70,180 123,180 123,120 660,120 660,60" fill="none" stroke="#2b50aa" stroke-width="3"/>
+  <circle cx="70" cy="180" r="5" fill="#2b50aa"/><text x="66" y="168" font-size="12" fill="#2b50aa">0</text>
+  <circle cx="123" cy="120" r="5" fill="#2b50aa"/><text x="119" y="108" font-size="12" fill="#2b50aa">1</text>
+  <circle cx="550" cy="120" r="5" fill="#2b50aa"/><text x="546" y="108" font-size="12" fill="#2b50aa">1</text>
+  <circle cx="660" cy="60" r="5" fill="#2b50aa"/><text x="656" y="48" font-size="12" fill="#2b50aa">2</text>
+  <text x="70" y="18" font-size="11" fill="#2b50aa">— cumulative new users (within the selected period)</text>
+</svg>
+<p><strong>How to read it, simply.</strong> The line starts at 0 on the first
+day of the selected period. It steps up only on days when somebody joined,
+by however many joined that day (Jun 15: up 1, for E). It stays flat on days
+when only returning users showed up, however busy those days were. And the
+height of the line at the end of the period is the headline number: the
+total new users captured in the selected period — here, <strong>2</strong>.
+Move the slicer to the full range (Jan 11 → Nov 3) and the same chart ends
+at 6, because all six members joined inside that range.</p>
+<table>
+<tr><th>Day</th><th class="num">New Users that day</th><th class="num">Cumulative New Users</th></tr>
+<tr><td>2026-06-15</td><td class="num">1</td><td class="num">1</td></tr>
+<tr><td>2026-07-14</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-08-22</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-09-18</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-10-05</td><td class="num">0</td><td class="num">1</td></tr>
+<tr><td>2026-11-03</td><td class="num">1</td><td class="num">2</td></tr>
+</table>
+
+
+
+</body></html>
